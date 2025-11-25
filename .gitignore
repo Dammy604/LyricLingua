@@ -1,0 +1,14 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# React Native
+ios/build/
+android/app/build/
+.expo/
+.expo-shared/
+dist/
+
+# Misc
+.DS_Store
