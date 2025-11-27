@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ll-bg: #050505;
+  --ll-bg-alt: #0f1115;
+  --ll-surface: rgba(13, 15, 19, 0.92);
+  --ll-card: rgba(255, 255, 255, 0.04);
+  --ll-border: rgba(255, 255, 255, 0.08);
+  --ll-text: #f3f4f6;
+  --ll-muted: rgba(243, 244, 246, 0.65);
+  --ll-accent: #34d399;
+  --ll-accent-strong: #10b981;
+  --ll-warning: #f472b6;
+  --ll-shadow-strong: 0 40px 120px rgba(0, 0, 0, 0.55);
+  --ll-radius-xl: 32px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", "Space Grotesk", system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: var(--ll-bg);
+  color: var(--ll-text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(52, 211, 153, 0.35);
+  color: #fff;
+}

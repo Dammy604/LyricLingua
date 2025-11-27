@@ -1,0 +1,48 @@
+{
+  "name": "lyriclingua",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Learn languages through music - A comprehensive lyrics learning platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "shared/*"
+  ],
+  "scripts": {
+    "mobile": "npm run start --workspace=apps/mobile",
+    "mobile:android": "npm run android --workspace=apps/mobile",
+    "mobile:ios": "npm run ios --workspace=apps/mobile",
+    "web": "npm run dev --workspace=apps/web",
+    "api": "npm run dev --workspace=packages/api",
+    "db:migrate": "npm run migrate --workspace=packages/db",
+    "db:seed": "npm run seed --workspace=packages/db",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces",
+    "clean": "rimraf node_modules apps/*/node_modules packages/*/node_modules"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dammy604/LyricLingua.git"
+  },
+  "keywords": [
+    "language-learning",
+    "lyrics",
+    "music",
+    "translation",
+    "react-native",
+    "expo"
+  ],
+  "author": "Dammy604",
+  "license": "MIT",
+  "devDependencies": {
+    "rimraf": "^5.0.5"
+  }
+}
+
+
+
+
+
+
+

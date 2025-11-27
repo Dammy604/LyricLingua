@@ -1,0 +1,27 @@
+{
+  "name": "@lyriclingua/db",
+  "version": "1.0.0",
+  "description": "LyricLingua Database Layer",
+  "main": "src/index.js",
+  "scripts": {
+    "migrate": "node src/migrations/run.js",
+    "migrate:rollback": "node src/migrations/rollback.js",
+    "seed": "node src/seeders/run.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "pg-hstore": "^2.3.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "private": true
+}
+
+
+
+
+
+
+
