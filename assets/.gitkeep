@@ -1,0 +1,9 @@
+# Assets Directory
+# 
+# Add the following files for production builds:
+# - icon.png (1024x1024) - App icon
+# - splash.png (1284x2778) - Splash screen image  
+# - adaptive-icon.png (1024x1024) - Android adaptive icon
+# - favicon.png (48x48) - Web favicon
+#
+# For development, these are optional. Expo will use defaults.
