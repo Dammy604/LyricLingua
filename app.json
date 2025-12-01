@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "fbee8182-f836-41d8-9b42-31829df7ed9c"
+      }
+    },
+    "android": {
+      "package": "com.dammy16.lyriclingua"
+    }
+  }
+}

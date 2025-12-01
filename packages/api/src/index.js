@@ -16,6 +16,8 @@ const audioRoutes = require("./routes/audio");
 const communityRoutes = require("./routes/community");
 const userRoutes = require("./routes/user");
 const authRoutes = require("./routes/auth");
+const searchRoutes = require("./routes/search");
+const spotifyRoutes = require("./routes/spotify");
 
 // Middleware
 const { errorHandler } = require("./middleware/errorHandler");
@@ -27,7 +29,9 @@ const PORT = process.env.PORT || 3000;
 // Security middleware
 app.use(helmet());
 
-const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000")
+const allowedOrigins = (
+  process.env.CORS_ORIGIN || "http://localhost:3000,http://localhost:8081"
+)
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -66,6 +70,8 @@ app.use("/api/audio", audioRoutes);
 app.use("/api/community", communityRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/spotify", spotifyRoutes);
 
 // 404 handler
 app.use((req, res) => {

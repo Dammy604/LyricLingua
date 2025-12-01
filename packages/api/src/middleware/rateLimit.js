@@ -49,10 +49,26 @@ const translationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/**
+ * Limiter for Spotify API proxy calls
+ */
+const spotifyLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  message: {
+    error: 'Spotify rate limit exceeded',
+    code: 'SPOTIFY_RATE_LIMIT',
+    retryAfter: 60,
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 module.exports = {
   rateLimiter,
   authLimiter,
   translationLimiter,
+  spotifyLimiter,
 };
 
 

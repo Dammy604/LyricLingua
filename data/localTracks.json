@@ -1,0 +1,30 @@
+[
+  {
+    "id": "local-fia-davido",
+    "title": "FIA",
+    "artist": "Davido",
+    "source": "local",
+    "file": "/media/fia_davido.mp3",
+    "duration": 210
+  },
+  {
+    "id": "local-all-the-stars",
+    "title": "All the Stars",
+    "artist": "Kendrick Lamar & SZA",
+    "source": "local",
+    "file": "/media/all_the_stars_kendrick_sza.mp3",
+    "duration": 240
+  },
+  {
+    "id": "local-titi-me-pregunto",
+    "title": "Titi Me Pregunto",
+    "artist": "Bad Bunny",
+    "source": "local",
+    "file": "/media/titi_me_pregunto_badbunny.mp3",
+    "duration": 200
+  }
+]
+
+
+
+
