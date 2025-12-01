@@ -3,7 +3,8 @@
  * Handle audio streaming and playback
  */
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+const API_BASE =
+  process.env.EXPO_PUBLIC_API_URL || 'https://lyriclingua-api.onrender.com/api';
 
 /**
  * Get audio stream URL for a song

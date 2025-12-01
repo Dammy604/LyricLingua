@@ -1,7 +1,8 @@
 import Constants from 'expo-constants';
 
 const expoConfig = Constants.expoConfig ?? Constants.manifest ?? {};
-const API_BASE_URL = expoConfig?.extra?.apiBaseUrl || 'http://localhost:3000';
+const API_BASE_URL =
+  expoConfig?.extra?.apiBaseUrl || 'https://lyriclingua-api.onrender.com';
 
 const fetchJson = async (url, options = {}) => {
   const response = await fetch(url, options);

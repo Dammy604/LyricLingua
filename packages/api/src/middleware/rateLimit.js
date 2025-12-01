@@ -2,17 +2,17 @@
  * Rate Limiting Middleware
  */
 
-const rateLimit = require('express-rate-limit');
+const rateLimit = require("express-rate-limit");
 
 /**
  * General API rate limiter
  */
 const rateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 2000, // I allow 2000 requests per 15 minutes
   message: {
-    error: 'Too many requests',
-    code: 'RATE_LIMIT_EXCEEDED',
+    error: "Too many requests",
+    code: "RATE_LIMIT_EXCEEDED",
     retryAfter: 15 * 60, // seconds
   },
   standardHeaders: true,
@@ -26,8 +26,8 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // Limit each IP to 10 login attempts per windowMs
   message: {
-    error: 'Too many login attempts',
-    code: 'AUTH_RATE_LIMIT',
+    error: "Too many login attempts",
+    code: "AUTH_RATE_LIMIT",
     retryAfter: 15 * 60,
   },
   standardHeaders: true,
@@ -41,8 +41,8 @@ const translationLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 30, // Limit each IP to 30 translation requests per minute
   message: {
-    error: 'Translation rate limit exceeded',
-    code: 'TRANSLATION_RATE_LIMIT',
+    error: "Translation rate limit exceeded",
+    code: "TRANSLATION_RATE_LIMIT",
     retryAfter: 60,
   },
   standardHeaders: true,
@@ -56,8 +56,8 @@ const spotifyLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 30,
   message: {
-    error: 'Spotify rate limit exceeded',
-    code: 'SPOTIFY_RATE_LIMIT',
+    error: "Spotify rate limit exceeded",
+    code: "SPOTIFY_RATE_LIMIT",
     retryAfter: 60,
   },
   standardHeaders: true,
@@ -70,10 +70,3 @@ module.exports = {
   translationLimiter,
   spotifyLimiter,
 };
-
-
-
-
-
-
-
