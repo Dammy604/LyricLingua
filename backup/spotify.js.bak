@@ -1,0 +1,38 @@
+import Constants from 'expo-constants';
+
+const expoConfig = Constants.expoConfig ?? Constants.manifest ?? {};
+const API_BASE_URL = expoConfig?.extra?.apiBaseUrl || 'http://localhost:3000';
+
+const fetchJson = async (url, options = {}) => {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const errorMessage = data.error_description || data.error || data.message || 'Request failed.';
+    const error = new Error(errorMessage);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+};
+
+const buildUrl = (path) => `${API_BASE_URL.replace(/\/$/, '')}${path}`;
+
+export const fetchSpotifyPreview = async (trackId) => {
+  if (!trackId) {
+    throw new Error('No Spotify track ID configured for this song.');
+  }
+  const payload = await fetchJson(buildUrl(`/api/spotify/preview/${encodeURIComponent(trackId)}`));
+  return {
+    previewUrl: payload.preview_url || '',
+    trackName: payload.title,
+    artistLine: payload.artist || '',
+    externalUrl: payload.external_url || '',
+    durationMs: payload.duration_ms || null,
+    artwork: payload.artwork || null,
+  };
+};
+
+export default {
+  fetchSpotifyPreview,
+};
+

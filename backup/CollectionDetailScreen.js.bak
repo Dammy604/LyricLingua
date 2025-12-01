@@ -1,0 +1,54 @@
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import ScreenShell, { SectionCard } from '../components/ui/ScreenShell';
+import useTheme from '../hooks/useTheme';
+
+const createStyles = (colors, spacing, radius) =>
+  StyleSheet.create({
+    emptyContainer: {
+      alignItems: 'center',
+      paddingVertical: spacing(3),
+    },
+    emptyText: {
+      color: colors.muted,
+      fontSize: 14,
+      marginBottom: spacing(2),
+      textAlign: 'center',
+    },
+    addButton: {
+      paddingHorizontal: spacing(2.5),
+      paddingVertical: spacing(0.9),
+      borderRadius: radius,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    addButtonText: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+  });
+
+const CollectionDetailScreen = ({ route }) => {
+  const { colors, spacing, radius } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors, spacing, radius), [colors, spacing, radius]);
+
+  const { title = 'Collection', detail = '', count = 0 } = route?.params || {};
+
+  return (
+    <ScreenShell title={title} subtitle={detail || `${count} songs`}>
+      <SectionCard title="Songs">
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No songs added yet.</Text>
+          <TouchableOpacity style={styles.addButton} accessibilityRole="button">
+            <Text style={styles.addButtonText}>Add song to this collection</Text>
+          </TouchableOpacity>
+        </View>
+      </SectionCard>
+    </ScreenShell>
+  );
+};
+
+export default CollectionDetailScreen;
+

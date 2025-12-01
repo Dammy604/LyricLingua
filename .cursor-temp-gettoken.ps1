@@ -1,0 +1,1 @@
+\='42b7c96934294de8b072164166a6c743:5933f154ecab4686b4244c6384717ef4'\n\=[Text.Encoding]::ASCII.GetBytes(\)\n\=[Convert]::ToBase64String(\)\n(Invoke-WebRequest -Method POST -Uri 'https://accounts.spotify.com/api/token' -Headers @{Authorization=('Basic ' + \);'Content-Type'='application/x-www-form-urlencoded'} -Body 'grant_type=client_credentials').Content

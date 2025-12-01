@@ -370,6 +370,42 @@ router.get(
   }
 );
 
+router.get(
+  "/public-search",
+  spotifyLimiter,
+  [
+    query("q").notEmpty().trim(),
+    query("limit").optional().isInt({ min: 1, max: 25 }),
+  ],
+  validate,
+  async (req, res, next) => {
+    try {
+      if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+        return res.status(500).json({
+          error: "Spotify credentials are not configured on the server.",
+          code: "SPOTIFY_CONFIG_ERROR",
+        });
+      }
+      const token = await getClientCredentialsToken();
+      const { q, limit = 10 } = req.query;
+      const response = await spotifySearchTracks(token, q, "track", limit);
+      const items = response?.tracks?.items || [];
+      const results = items.map((item) => ({
+        id: item.id,
+        title: item.name,
+        artist: item.artists?.map((artist) => artist.name).join(", ") || "",
+        album: item.album?.name || "",
+        artwork: item.album?.images?.[0]?.url || "",
+        preview_url: item.preview_url || null,
+        duration_ms: item.duration_ms || null,
+      }));
+      return res.json({ results });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 module.exports = router;
 
 

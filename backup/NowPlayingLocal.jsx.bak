@@ -1,0 +1,683 @@
+import React from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDispatch, useSelector } from 'react-redux';
+import Ionicons from '@expo/vector-icons/Ionicons';
+
+import PlayerControls from '../components/ui/PlayerControls';
+import ProgressBar from '../components/ui/ProgressBar';
+import LyricsBlock from '../components/ui/LyricsBlock';
+import useTheme from '../hooks/useTheme';
+import playerService, {
+  play as playAudio,
+  pause as pauseAudio,
+  skipForward,
+  skipBackward,
+  seekTo,
+} from '../services/audio/playerService';
+import lyricsManager from '../services/sync/lyricsManager';
+import { fetchSongs } from '../services/data/libraryService';
+import { fetchSpotifyPreview } from '../services/spotify';
+import {
+  selectCurrentTrack,
+  selectPlaybackState,
+  setCurrentTrack,
+  setQueue,
+  setRepeatMode,
+  toggleShuffle,
+  updatePlaybackStatus,
+  setError as setAudioError,
+} from '../store/slices/audioSlice';
+import {
+  selectLyricsLines,
+  selectLyricsMetadata,
+  selectLyricsState,
+  setLyricsData,
+  setLoading as setLyricsLoading,
+  setError as setLyricsError,
+  setViewMode,
+  setCurrentLineIndex,
+  setActiveTranslation,
+} from '../store/slices/lyricsSlice';
+import parseLrc from '../utils/lrcParser';
+import loadTextAsset from '../utils/loadTextAsset';
+
+const VIEW_MODES = [
+  { key: 'original', label: 'Original' },
+  { key: 'dual', label: 'Dual' },
+  { key: 'translation', label: 'Translation' },
+];
+
+const LANGUAGE_LABELS = {
+  english: 'English',
+  yoruba: 'Yoruba',
+  pidgin: 'Pidgin',
+  spanish: 'Español',
+  french: 'Français',
+  korean: '한국어',
+};
+
+const LAST_TRACK_STORAGE_KEY = 'll:last-track-id';
+
+const formatTime = (value = 0) => {
+  const totalSeconds = Math.max(0, Math.floor((value || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+const NowPlayingLocal = () => {
+  const dispatch = useDispatch();
+  const { colors, spacing } = useTheme();
+  const currentTrack = useSelector(selectCurrentTrack);
+  const playback = useSelector(selectPlaybackState);
+  const lyricsLines = useSelector(selectLyricsLines);
+  const lyricsMetadata = useSelector(selectLyricsMetadata);
+  const lyricsState = useSelector(selectLyricsState);
+
+  const [isBootstrapping, setIsBootstrapping] = React.useState(true);
+  const previewCacheRef = React.useRef({});
+  const spotifyPreviewRef = React.useRef(null);
+  const [previewStatus, setPreviewStatus] = React.useState({ isPlaying: false, position: 0, duration: 0 });
+  const [isPreviewLoading, setIsPreviewLoading] = React.useState(false);
+  const [previewMessage, setPreviewMessage] = React.useState('');
+  const [previewError, setPreviewError] = React.useState(null);
+  const isPlaying = playback.isPlaying;
+
+  const translationLanguage = lyricsState.activeTranslation;
+  const translationLines = React.useMemo(
+    () =>
+      translationLanguage
+        ? lyricsState.currentLyrics?.translations?.[translationLanguage] || []
+        : [],
+    [lyricsState.currentLyrics, translationLanguage],
+  );
+
+  const handleStatusUpdate = React.useCallback(
+    (status) => {
+      if (!status.isLoaded) {
+        return;
+      }
+      const payload = {
+        status: 'ready',
+        isPlaying: status.isPlaying,
+        isBuffering: status.isBuffering,
+        currentTime: status.positionMillis ?? 0,
+      };
+      if (typeof status.durationMillis === 'number') {
+        payload.duration = status.durationMillis;
+      }
+      dispatch(updatePlaybackStatus(payload));
+    },
+    [dispatch],
+  );
+
+  const loadLocalLyrics = React.useCallback(
+    async (track) => {
+      if (!track?.lyricsLocal) return false;
+      try {
+        const raw = await loadTextAsset(track.lyricsLocal);
+        if (!raw) return false;
+        const parsed = parseLrc(raw);
+        dispatch(
+          setLyricsData({
+            songId: track.id,
+            metadata: {
+              artist: parsed.metadata.artist || track.artist,
+              title: parsed.metadata.title || track.title,
+              album: parsed.metadata.album || track.album,
+              duration: parsed.metadata.duration || track.duration,
+            },
+            lyrics: parsed.lines,
+            translations: {},
+            availableTranslations: [],
+          }),
+        );
+        return true;
+      } catch (error) {
+        console.warn('Unable to parse local LRC file', error);
+        return false;
+      }
+    },
+    [dispatch],
+  );
+
+  const stopSpotifyPreview = React.useCallback(async () => {
+    const sound = spotifyPreviewRef.current;
+    if (sound) {
+      try {
+        await sound.stopAsync();
+      } catch (_) {
+        // no-op
+      }
+      try {
+        await sound.unloadAsync();
+      } catch (_) {
+        // no-op
+      }
+      spotifyPreviewRef.current = null;
+    }
+    setPreviewStatus({ isPlaying: false, position: 0, duration: 0 });
+  }, []);
+
+  const handleSpotifyStatusUpdate = React.useCallback(
+    (status) => {
+      if (!status.isLoaded) {
+        return;
+      }
+      setPreviewStatus((prev) => ({
+        isPlaying: status.isPlaying,
+        position: status.positionMillis ?? prev.position,
+        duration: status.durationMillis ?? prev.duration,
+      }));
+      if (status.didJustFinish) {
+        setPreviewMessage('Preview ended.');
+        stopSpotifyPreview();
+      }
+    },
+    [stopSpotifyPreview],
+  );
+
+  const ensureSpotifyPreview = React.useCallback(
+    async (trackId) => {
+      if (!trackId) {
+        throw new Error('Spotify track ID missing.');
+      }
+      if (previewCacheRef.current[trackId]) {
+        return previewCacheRef.current[trackId];
+      }
+      const previewData = await fetchSpotifyPreview(trackId);
+      previewCacheRef.current[trackId] = previewData;
+      return previewData;
+    },
+    [],
+  );
+
+  const handleSpotifyPreviewPress = React.useCallback(async () => {
+    if (previewStatus.isPlaying) {
+      setPreviewMessage('Preview stopped.');
+      await stopSpotifyPreview();
+      return;
+    }
+    if (!currentTrack?.spotifyId) {
+      setPreviewError('Add a Spotify track ID to enable previews.');
+      return;
+    }
+    setPreviewError(null);
+    setPreviewMessage('');
+    setIsPreviewLoading(true);
+    try {
+      const previewData = await ensureSpotifyPreview(currentTrack.spotifyId);
+      if (!previewData?.previewUrl) {
+        setPreviewMessage('Preview unavailable for this track.');
+        return;
+      }
+      if (isPlaying) {
+        await pauseAudio();
+      }
+      await stopSpotifyPreview();
+      const sound = new Audio.Sound();
+      await sound.loadAsync(
+        { uri: previewData.previewUrl },
+        { shouldPlay: true, progressUpdateIntervalMillis: 250 },
+        handleSpotifyStatusUpdate,
+      );
+      spotifyPreviewRef.current = sound;
+      setPreviewStatus({
+        isPlaying: true,
+        position: 0,
+        duration: previewData.durationMs || 30_000,
+      });
+      setPreviewMessage(
+        `Playing Spotify preview${previewData.trackName ? ` • ${previewData.trackName}` : ''}`,
+      );
+    } catch (error) {
+      setPreviewError(error.message || 'Unable to load Spotify preview.');
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }, [
+    currentTrack?.spotifyId,
+    ensureSpotifyPreview,
+    handleSpotifyStatusUpdate,
+    isPlaying,
+    pauseAudio,
+    previewStatus.isPlaying,
+    stopSpotifyPreview,
+  ]);
+
+  const prepareTrack = React.useCallback(
+    async (track) => {
+      if (!track) return;
+      dispatch(setCurrentTrack(track));
+      dispatch(
+        updatePlaybackStatus({
+          status: 'loading',
+          currentTime: 0,
+          duration: track.duration || 0,
+          isPlaying: false,
+        }),
+      );
+      try {
+        await playerService.loadAudio(track, {
+          onPlaybackStatusUpdate: handleStatusUpdate,
+        });
+        await AsyncStorage.setItem(LAST_TRACK_STORAGE_KEY, track.id);
+      } catch (error) {
+        dispatch(setAudioError(error.message));
+      }
+
+      dispatch(setLyricsLoading(true));
+      try {
+        const handledLocally = await loadLocalLyrics(track);
+        if (!handledLocally) {
+          const lyricsData = await lyricsManager.getLyricsBySongId(track.lyricsId || track.id);
+          if (lyricsData) {
+            dispatch(setLyricsData(lyricsData));
+          }
+        }
+      } catch (error) {
+        dispatch(setLyricsError(error.message));
+      } finally {
+        dispatch(setLyricsLoading(false));
+      }
+    },
+    [dispatch, handleStatusUpdate, loadLocalLyrics],
+  );
+
+  React.useEffect(() => {
+    return () => {
+      stopSpotifyPreview();
+    };
+  }, [stopSpotifyPreview]);
+
+  React.useEffect(() => {
+    setPreviewMessage('');
+    setPreviewError(null);
+    stopSpotifyPreview();
+  }, [currentTrack?.id, stopSpotifyPreview]);
+
+  React.useEffect(() => {
+    if (playback.isPlaying && previewStatus.isPlaying) {
+      stopSpotifyPreview();
+    }
+  }, [playback.isPlaying, previewStatus.isPlaying, stopSpotifyPreview]);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const bootstrap = async () => {
+      setIsBootstrapping(true);
+      try {
+        const songs = await fetchSongs();
+        if (!isMounted || !songs?.length) return;
+        const localSongs = songs.filter((song) => song.audioLocal);
+        const queue = localSongs.length ? localSongs : songs;
+        dispatch(setQueue(queue));
+        const lastTrackId = await AsyncStorage.getItem(LAST_TRACK_STORAGE_KEY);
+        const initialTrack =
+          queue.find((song) => song.id === lastTrackId) ||
+          queue.find((song) => song.audioLocal) ||
+          queue[0];
+        if (initialTrack) {
+          await prepareTrack(initialTrack);
+        }
+      } finally {
+        if (isMounted) {
+          setIsBootstrapping(false);
+        }
+      }
+    };
+    bootstrap();
+
+    return () => {
+      isMounted = false;
+      playerService.unload();
+    };
+  }, [dispatch, prepareTrack]);
+
+  const togglePlayPause = async () => {
+    if (isPlaying) {
+      await pauseAudio();
+    } else {
+      await playAudio();
+    }
+  };
+
+  const handleSeek = async (position) => {
+    await seekTo(position);
+  };
+
+  const cycleRepeat = () => {
+    const sequence = ['off', 'all', 'one'];
+    const currentIndex = sequence.indexOf(playback.repeatMode);
+    const next = sequence[(currentIndex + 1) % sequence.length];
+    dispatch(setRepeatMode(next));
+  };
+
+  const activeLineIndex = React.useMemo(() => {
+    if (!lyricsLines.length || typeof playback.currentTime !== 'number') {
+      return -1;
+    }
+    const currentMs = playback.currentTime;
+    for (let i = lyricsLines.length - 1; i >= 0; i -= 1) {
+      if (currentMs >= lyricsLines[i].time) {
+        return i;
+      }
+    }
+    return -1;
+  }, [lyricsLines, playback.currentTime]);
+
+  React.useEffect(() => {
+    if (activeLineIndex >= 0) {
+      dispatch(setCurrentLineIndex(activeLineIndex));
+    }
+  }, [activeLineIndex, dispatch]);
+
+  const resolveTranslation = React.useCallback(
+    (time) => {
+      if (!translationLines.length) return null;
+      let candidate = null;
+      translationLines.forEach((line) => {
+        if (time >= line.time) {
+          candidate = line;
+        }
+      });
+      return candidate?.text || null;
+    },
+    [translationLines],
+  );
+
+  const showOriginal = lyricsState.viewMode !== 'translation';
+  const showTranslation = lyricsState.viewMode !== 'original';
+
+  const styles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        safeArea: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+        content: {
+          paddingHorizontal: spacing(2),
+          paddingBottom: spacing(4),
+        },
+        artworkWrapper: {
+          alignItems: 'center',
+          marginBottom: spacing(3),
+        },
+        artwork: {
+          width: 300,
+          height: 300,
+          borderRadius: spacing(2),
+          backgroundColor: colors.surface,
+        },
+        trackTitle: {
+          fontSize: 28,
+          fontWeight: '700',
+          color: colors.text,
+          textAlign: 'center',
+          marginTop: spacing(2),
+        },
+        trackMeta: {
+          color: colors.muted,
+          textAlign: 'center',
+          marginTop: spacing(0.5),
+        },
+        heartButton: {
+          alignSelf: 'center',
+          marginTop: spacing(1),
+        },
+        section: {
+          marginTop: spacing(2),
+        },
+        previewCard: {
+          backgroundColor: colors.surface,
+          borderRadius: spacing(1.5),
+          borderWidth: 1,
+          borderColor: colors.muted + '30',
+          padding: spacing(1.5),
+          alignItems: 'center',
+        },
+        previewButton: {
+          paddingVertical: spacing(0.9),
+          paddingHorizontal: spacing(2.25),
+          borderRadius: spacing(1.5),
+          backgroundColor: colors.primary,
+        },
+        previewButtonText: {
+          color: colors.background,
+          fontWeight: '700',
+          fontSize: 14,
+        },
+        previewMeta: {
+          color: colors.text,
+          marginTop: spacing(0.75),
+          textAlign: 'center',
+          fontSize: 13,
+        },
+        previewHint: {
+          color: colors.muted,
+          marginTop: spacing(0.75),
+          textAlign: 'center',
+          fontSize: 12,
+        },
+        previewError: {
+          color: colors.danger || '#ef4444',
+          marginTop: spacing(0.75),
+          textAlign: 'center',
+          fontSize: 12,
+        },
+        lyricsContainer: {
+          backgroundColor: colors.surface,
+          borderRadius: spacing(2),
+          padding: spacing(2),
+          marginTop: spacing(2),
+          maxHeight: 360,
+        },
+        lyricsScroll: {
+          maxHeight: 320,
+        },
+        toggleRow: {
+          flexDirection: 'row',
+          justifyContent: 'center',
+          marginTop: spacing(1),
+        },
+        toggleButton: (active) => ({
+          paddingVertical: spacing(0.5),
+          paddingHorizontal: spacing(1.5),
+          borderRadius: spacing(1),
+          backgroundColor: active ? colors.primary : colors.surface,
+        }),
+        toggleButtonSpacing: {
+          marginHorizontal: spacing(0.5),
+        },
+        toggleText: (active) => ({
+          color: active ? colors.background : colors.text,
+          fontWeight: '600',
+        }),
+        translationRow: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          marginTop: spacing(1),
+        },
+        translationChip: (active) => ({
+          paddingVertical: spacing(0.3),
+          paddingHorizontal: spacing(1),
+          borderRadius: spacing(1),
+          borderWidth: 1,
+          borderColor: active ? colors.primary : colors.muted + '66',
+          marginHorizontal: spacing(0.5),
+          marginBottom: spacing(0.5),
+          backgroundColor: active ? colors.primary + '20' : 'transparent',
+        }),
+        translationChipText: (active) => ({
+          color: active ? colors.primary : colors.text,
+          fontWeight: '600',
+          fontSize: 12,
+        }),
+        loader: {
+          marginTop: spacing(2),
+        },
+      }),
+    [colors, spacing],
+  );
+
+  const artworkSource = React.useMemo(() => {
+    if (currentTrack?.coverLocal) {
+      return currentTrack.coverLocal;
+    }
+    if (currentTrack?.coverUrl) {
+      return { uri: currentTrack.coverUrl };
+    }
+    if (currentTrack?.artwork) {
+      return { uri: currentTrack.artwork };
+    }
+    return null;
+  }, [currentTrack?.artwork, currentTrack?.coverLocal, currentTrack?.coverUrl]);
+  const metadataArtist = currentTrack?.artist || lyricsMetadata?.artist || 'Artist';
+  const metadataAlbum = currentTrack?.album || lyricsMetadata?.album || 'Album';
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.artworkWrapper}>
+          {artworkSource ? (
+            <Image source={artworkSource} style={styles.artwork} />
+          ) : (
+            <View style={[styles.artwork, { justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="musical-notes" size={64} color={colors.muted} />
+            </View>
+          )}
+          <Text style={styles.trackTitle}>{currentTrack?.title || 'Select a track'}</Text>
+          <Text style={styles.trackMeta}>
+            {metadataArtist} • {metadataAlbum}
+          </Text>
+          <TouchableOpacity style={styles.heartButton} accessibilityRole="button" accessibilityLabel="Favorite track">
+            <Ionicons name="heart-outline" size={28} color={colors.muted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <ProgressBar
+            currentTime={playback.currentTime}
+            duration={playback.duration}
+            onSeek={handleSeek}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <PlayerControls
+            isPlaying={isPlaying}
+            onPlayPause={togglePlayPause}
+            onPrevious={() => skipBackward(10)}
+            onNext={() => skipForward(15)}
+            onShuffle={() => dispatch(toggleShuffle())}
+            onRepeat={cycleRepeat}
+            shuffleEnabled={playback.shuffle}
+            repeatMode={playback.repeatMode}
+          />
+        </View>
+
+        <View style={[styles.section, styles.previewCard]}>
+          <TouchableOpacity
+            style={[
+              styles.previewButton,
+              (!currentTrack?.spotifyId || isPreviewLoading) && { opacity: 0.7 },
+            ]}
+            onPress={handleSpotifyPreviewPress}
+            disabled={!currentTrack?.spotifyId || isPreviewLoading}
+            accessibilityRole="button"
+            accessibilityLabel={
+              previewStatus.isPlaying ? 'Stop Spotify preview' : 'Play Spotify preview'
+            }
+          >
+            <Text style={styles.previewButtonText}>
+              {previewStatus.isPlaying ? 'Stop Spotify Preview' : 'Play Spotify Preview'}
+            </Text>
+          </TouchableOpacity>
+          {isPreviewLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing(1) }} /> : null}
+          {previewStatus.isPlaying && previewStatus.duration ? (
+            <Text style={styles.previewMeta}>
+              {formatTime(previewStatus.position)} / {formatTime(previewStatus.duration)}
+            </Text>
+          ) : null}
+          {previewMessage ? <Text style={styles.previewMeta}>{previewMessage}</Text> : null}
+          {!currentTrack?.spotifyId ? (
+            <Text style={styles.previewHint}>
+              Add a Spotify track ID to this song to unlock 30-second previews.
+            </Text>
+          ) : null}
+          {previewError ? <Text style={styles.previewError}>{previewError}</Text> : null}
+        </View>
+
+        <View style={styles.toggleRow}>
+          {VIEW_MODES.map((mode) => (
+            <TouchableOpacity
+              key={mode.key}
+              style={[styles.toggleButton(lyricsState.viewMode === mode.key), styles.toggleButtonSpacing]}
+              onPress={() => dispatch(setViewMode(mode.key))}
+              accessibilityRole="button"
+              accessibilityState={{ selected: lyricsState.viewMode === mode.key }}
+            >
+              <Text style={styles.toggleText(lyricsState.viewMode === mode.key)}>{mode.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {lyricsState.availableTranslations.length > 0 && (
+          <View style={styles.translationRow}>
+            {lyricsState.availableTranslations.map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={styles.translationChip(lang === translationLanguage)}
+                onPress={() => dispatch(setActiveTranslation(lang))}
+                accessibilityRole="button"
+                accessibilityState={{ selected: lang === translationLanguage }}
+              >
+                <Text style={styles.translationChipText(lang === translationLanguage)}>
+                  {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.lyricsContainer}>
+          {isBootstrapping || lyricsState.isLoading ? (
+            <ActivityIndicator color={colors.primary} style={styles.loader} />
+          ) : (
+            <ScrollView style={styles.lyricsScroll} showsVerticalScrollIndicator={false}>
+              {lyricsLines.map((line, index) => {
+                const translationText = showTranslation ? resolveTranslation(line.time) : null;
+                const displayLine = showOriginal ? line : { ...line, text: translationText || line.text };
+                return (
+                  <LyricsBlock
+                    key={`${line.time}-${index}`}
+                    line={displayLine}
+                    translation={showOriginal && showTranslation ? translationText : null}
+                    isActive={index === activeLineIndex}
+                    currentTime={playback.currentTime}
+                  />
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+export default NowPlayingLocal;
+
